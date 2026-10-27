@@ -556,7 +556,7 @@ def _cumulative_candidate(model: DeclaredModel, resolve, live):
     if not temporals or not entities:
         missing = " and ".join(
             what
-            for what, found in (("an entity", entities), ("a time column", temporals))
+            for what, found in (("entity", entities), ("time column", temporals))
             if not found
         )
         return None, (
@@ -789,10 +789,45 @@ def findings(
             reasons = prepared.dropped.get(finding_class) or [
                 "no declared column could be measured"
             ]
-            result.suppressed[finding_class] = (
-                "no declaration could be checked: " + "; ".join(reasons)
-            )
+            result.suppressed[finding_class] = _group_dropped(reasons)
     return result
+
+
+def _group_dropped(reasons: list[str]) -> str:
+    """One suppression reason per model, grouped where the reason is identical.
+
+    Each entry in ``reasons`` is ``"{model}: {reason text}"``. A project where
+    every model fails the same way (an undeclared role, say) would otherwise
+    repeat the same sentence once per model; grouping keeps the axis readable
+    at any model count.
+    """
+
+    grouped: dict[str, list[str]] = {}
+    order: list[str] = []
+    for item in reasons:
+        model, _, text = item.partition(": ")
+        if text not in grouped:
+            grouped[text] = []
+            order.append(text)
+        grouped[text].append(model)
+
+    if len(order) == 1:
+        text = order[0]
+        models = grouped[text]
+        if len(models) == 1:
+            return f"no declaration could be checked: {models[0]}: {text}"
+        return (
+            f"no declaration could be checked ({len(models)} models: "
+            f"{', '.join(models)}): {text}"
+        )
+
+    parts = [
+        f"{grouped[text][0]}: {text}"
+        if len(grouped[text]) == 1
+        else f"({len(grouped[text])} models: {', '.join(grouped[text])}): {text}"
+        for text in order
+    ]
+    return "no declaration could be checked: " + "; ".join(parts)
 
 
 def _refusal(exc: Exception) -> str:

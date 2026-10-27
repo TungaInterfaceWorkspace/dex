@@ -580,11 +580,35 @@ def test_no_entity_or_time_to_order_by_is_named(tmp_path: Path):
     result = _run(
         tmp_path,
         {"model.p.t": _model("t", columns=_additive("amount"))},
-        "CREATE TABLE t AS SELECT i * 1.0 AS amount FROM range(50) t(i)",
+        "CREATE TABLE t AS SELECT i * 1.0 AS amount, "
+        "TIMESTAMP '2026-01-01' + to_days(i) AS ts FROM range(50) t(i)",
     )
     assert result.findings == []
     assert any("to order it by" in note for note in result.notes)
-    assert "to order it by" in result.suppressed["additivity"]
+    reason = result.suppressed["additivity"]
+    assert "there is no entity to order it by" in reason
+    assert "there is no an entity" not in reason
+
+
+def test_identical_suppression_reasons_are_grouped_across_models(tmp_path: Path):
+    result = _run(
+        tmp_path,
+        {
+            "model.p.t1": _model("t1", columns=_additive("amount")),
+            "model.p.t2": _model("t2", columns=_additive("amount")),
+        },
+        "CREATE TABLE t1 AS SELECT i * 1.0 AS amount, "
+        "TIMESTAMP '2026-01-01' + to_days(i) AS ts FROM range(50) t(i)",
+        "CREATE TABLE t2 AS SELECT i * 1.0 AS amount, "
+        "TIMESTAMP '2026-01-01' + to_days(i) AS ts FROM range(50) t(i)",
+    )
+    assert result.findings == []
+    reason = result.suppressed["additivity"]
+    assert reason.count("there is no entity to order it by") == 1
+    assert (
+        "no declaration could be checked (2 models: t1, t2): "
+        "there is no entity to order it by" in reason
+    )
 
 
 # --- the build path's grain, and nothing declared at all --------------------------
